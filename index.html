@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Evora — Creator Questionnaire</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin: 0; padding: 0; background: #080808; }
+    @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes glow{0%,100%{box-shadow:0 0 20px rgba(231,0,136,0.2)}50%{box-shadow:0 0 40px rgba(231,0,136,0.4)}}
+    ::placeholder{color:rgba(255,255,255,0.2)!important}
+    ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+    *{box-sizing:border-box}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // --- Supabase Config ---
+    const SUPABASE_URL = "https://jhawboejqoaoqgmkxzfq.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpoYXdib2VqcW9hb3FnbWt4emZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE5MDkwMDgsImV4cCI6MjA1NzQ4NTAwOH0.RYOIONXIe0DP6LIFnJxjfnJCxSM8eGxJnJBm_IASEVY";
+    const REST = SUPABASE_URL + "/rest/v1";
+    const HEADERS = {
+      "apikey": SUPABASE_KEY,
+      "Authorization": "Bearer " + SUPABASE_KEY,
+      "Content-Type": "application/json",
+    };
+
+    function getSessionId() {
+      let sid = localStorage.getItem("evora-session-id");
+      if (!sid) {
+        sid = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem("evora-session-id", sid);
+      }
+      return sid;
+    }
+
+    const SESSION_ID = getSessionId();
+
+    async function supaLoad() {
+      try {
+        const resp = await fetch(REST + "/questionnaire_responses?session_id=eq." + SESSION_ID + "&limit=1", { headers: HEADERS });
+        if (!resp.ok) return null;
+        const rows = await resp.json();
+        return rows.length > 0 ? rows[0] : null;
+      } catch(e) { console.error("Load error:", e); return null; }
+    }
+
+    async function supaSave(answers, step, submitted, creatorName) {
+      try {
+        const body = {
+          session_id: SESSION_ID,
+          creator_name: creatorName || null,
+          answers: answers,
+          current_step: step,
+          submitted: submitted,
+          updated_at: new Date().toISOString(),
+        };
+        // Upsert using session_id
+        const resp = await fetch(REST + "/questionnaire_responses?on_conflict=session_id", {
+          method: "POST",
+          headers: { ...HEADERS, "Prefer": "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(body),
+        });
+        return resp.ok;
+      } catch(e) { console.error("Save error:", e); return false; }
+    }
+
+    // --- Questions ---
+    const QUESTIONS = [
+      { id: "name", section: 0, type: "text", q: "What's your name or handle?", placeholder: "e.g. Jenny" },
+      { id: "q1", section: 1, type: "single", q: "You walk into a party where you only know one person. What do you do?", options: [
+        "Talking to strangers within 5 minutes", "Stick with my person, warm up after a drink", "Find a corner and observe", "I organized the party"
+      ]},
+      { id: "q2", section: 1, type: "single", q: "Someone leaves a mean comment on your video. First instinct?", options: [
+        "Clap back with something funny", "Ignore it completely", "It bothers me but I don't respond", "Screenshot it — make a video", "Respond genuinely"
+      ]},
+      { id: "q3", section: 1, type: "single", q: "When you make people laugh, how are you doing it?", options: [
+        "Big energy — loud, dramatic, physical", "Deadpan — wild things, straight face", "Self-deprecating — roasting myself", "Storytelling — the long buildup", "Sarcasm — dry and quick", "I'm more the one laughing"
+      ]},
+      { id: "q4", section: 1, type: "text", q: "Describe yourself in three words.", placeholder: "e.g. chaotic, sweet, loud" },
+      { id: "q5", section: 1, type: "textarea", q: "Your best friend describes you to a stranger. What do they say?", placeholder: "Don't overthink — what would they actually say?" },
+      { id: "q6", section: 1, type: "multi", q: "What makes you cry?", subtitle: "Pick all that apply", options: [
+        "Movies / TV easily", "Real conversations", "Frustration", "Happy moments", "Honestly, not much", "Music"
+      ]},
+      { id: "q7", section: 1, type: "single", q: "Someone's been talking behind your back. Your move?", options: [
+        "Confront them directly", "Cut them off silently", "Talk to friends first", "Joke about it to their face", "Overthink it honestly"
+      ]},
+      { id: "q8", section: 1, type: "textarea", q: "At your most confident — what are you doing?", placeholder: "When do you feel unstoppable?" },
+      { id: "q9", section: 1, type: "textarea", q: "Something you're insecure about but would joke about on camera?", placeholder: "Optional — skip if you want" },
+      { id: "q10", section: 1, type: "single", q: "Main character energy or best friend energy?", options: [
+        "Main character — center stage", "Best friend — I make others shine", "Depends on the day", "Villain energy actually"
+      ]},
+      { id: "q11", section: 2, type: "ratings", q: "Rate your comfort level.", subtitle: "Tap to rate · 1 = absolutely not · 10 = in my sleep", items: [
+        "Talking to camera", "Silent + music", "Comedy skit", "Reacting to stuff", "Dancing / movement",
+        "Vulnerable content", "Spicy / provocative", "Sexy / suggestive", "Silly / unhinged", "Strangers / public"
+      ]},
+      { id: "q12", section: 2, type: "textarea", q: "A video idea you said no to. Why?", placeholder: "What crossed your line?" },
+      { id: "q13", section: 2, type: "textarea", q: "What content feels MOST like you?", placeholder: "Not what performs — what feels natural" },
+      { id: "q14", section: 2, type: "textarea", q: "What performs best but feels forced?", placeholder: "Gets views but doesn't feel like you" },
+      { id: "q15", section: 2, type: "textarea", q: "A creator you admire. Why?", placeholder: "@handle and what you love about them" },
+      { id: "q16", section: 2, type: "textarea", q: "A creator you'd NEVER want to be like. Why?", placeholder: "@handle and what turns you off" },
+      { id: "q17", section: 2, type: "textarea", q: "Your best video vs your worst — what's different about YOU?", placeholder: "What do you notice about yourself?" },
+      { id: "q18", section: 3, type: "single", q: "Your filming setup?", options: [
+        "Phone selfie mode", "Phone on tripod", "Ring light + phone", "Someone else films", "Mix of everything"
+      ]},
+      { id: "q19", section: 3, type: "single", q: "Who helps you film?", options: [
+        "Just me, solo", "Friend / roommate sometimes", "Partner — on and off camera", "Partner — off camera only", "Can get a group with notice"
+      ]},
+      { id: "q19b", section: 3, type: "text", q: "Days notice for a group setup?", placeholder: "e.g. 2-3 days" },
+      { id: "q20", section: 3, type: "multi", q: "Filming locations you have access to:", options: [
+        "Bedroom", "Kitchen", "Living room", "Bathroom / mirror", "Car", "Gym", "Outdoor / street", "Restaurant / bar"
+      ]},
+      { id: "q20b", section: 3, type: "text", q: "Other filming locations?", placeholder: "e.g. rooftop, pool, office" },
+      { id: "q21", section: 3, type: "textarea", q: "Wardrobe — what's ready to go?", placeholder: "gym clothes, lingerie, casual, costumes..." },
+      { id: "q22", section: 3, type: "textarea", q: "Hard no's. Things you'll never do on camera.", placeholder: "We need to know your boundaries" },
+    ];
+
+    const TOTAL = QUESTIONS.length;
+    const SECTIONS = ["intro", "who you are", "you on camera", "your reality"];
+
+    function EvoraLogo({ size = 20 }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: size * 0.2, userSelect: "none" }}>
+          <span style={{ fontSize: size, fontWeight: 800, color: "#fff", letterSpacing: "0.22em", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>EV</span>
+          <svg width={size * 1.2} height={size * 1.2} viewBox="0 0 40 40">
+            <defs><linearGradient id="og" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#e70088"/><stop offset="100%" stopColor="#ea66fd"/></linearGradient></defs>
+            <circle cx="20" cy="20" r="16" fill="none" stroke="url(#og)" strokeWidth="3.5"/>
+            <circle cx="20" cy="20" r="9" fill="none" stroke="url(#og)" strokeWidth="2.5" opacity="0.5"/>
+          </svg>
+          <span style={{ fontSize: size, fontWeight: 800, color: "#fff", letterSpacing: "0.22em", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>RA</span>
+        </div>
+      );
+    }
+
+    function RatingDots({ value, onChange, label }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0",
+          borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", flex: "1 1 auto", paddingRight: 16, lineHeight: 1.3 }}>{label}</span>
+          <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
+            {[1,2,3,4,5,6,7,8,9,10].map(n => (
+              <button key={n} onClick={() => onChange(n)}
+                style={{ width: 22, height: 22, borderRadius: "50%", border: "none", cursor: "pointer", padding: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: n <= value ? `rgba(231,0,136,${0.15 + (n/10)*0.65})` : "rgba(255,255,255,0.05)",
+                  boxShadow: n === value ? "0 0 12px rgba(231,0,136,0.5)" : "none",
+                  transition: "all 0.15s", transform: n === value ? "scale(1.25)" : "scale(1)" }}>
+                {n === value && <span style={{ fontSize: 8, color: "#fff", fontWeight: 800 }}>{n}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [step, setStep] = useState(0);
+      const [answers, setAnswers] = useState({});
+      const [submitted, setSubmitted] = useState(false);
+      const [loading, setLoading] = useState(true);
+      const [fade, setFade] = useState(false);
+
+      useEffect(() => {
+        (async () => {
+          try {
+            const row = await supaLoad();
+            if (row) {
+              if (row.answers) setAnswers(row.answers);
+              if (row.submitted) setSubmitted(true);
+              if (row.current_step != null && !row.submitted) setStep(row.current_step);
+            }
+          } catch(e) { console.error("Init error:", e); }
+          setLoading(false);
+        })();
+      }, []);
+
+      const save = useCallback(async (a, s, done) => {
+        await supaSave(a, s, done, a.name || null);
+      }, []);
+
+      const update = (id, val) => { const n = {...answers, [id]: val}; setAnswers(n); save(n, step, false); };
+      const go = (t) => { setFade(true); setTimeout(() => { setStep(t); setFade(false); }, 180); save(answers, t, false); };
+      const doSubmit = async () => { setSubmitted(true); await save(answers, step, true); };
+      const reset = async () => { setAnswers({}); setStep(0); setSubmitted(false); await supaSave({}, 0, false, null); };
+
+      const cur = QUESTIONS[step];
+      const answered = Object.keys(answers).filter(k => { const v = answers[k]; if (Array.isArray(v)) return v.length > 0; if (typeof v === "object" && v) return Object.values(v).some(x => x > 0); return v && String(v).trim().length > 0; }).length;
+      const pct = Math.round((answered / TOTAL) * 100);
+
+      if (loading) return (
+        <div style={{minHeight:"100vh",background:"#080808",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{animation:"pulse 1.5s ease-in-out infinite"}}><EvoraLogo size={24}/></div>
+        </div>
+      );
+
+      if (submitted) return (
+        <div style={{minHeight:"100vh",background:"#080808",display:"flex",alignItems:"center",justifyContent:"center",
+          fontFamily:"'Plus Jakarta Sans',sans-serif",padding:24,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:"25%",left:"50%",width:500,height:500,transform:"translate(-50%,-50%)",
+            background:"radial-gradient(circle,rgba(231,0,136,0.1) 0%,transparent 60%)",pointerEvents:"none"}}/>
+          <div style={{textAlign:"center",maxWidth:400,position:"relative",zIndex:1,animation:"fadeUp 0.6s ease"}}>
+            <div style={{marginBottom:40}}><EvoraLogo size={20}/></div>
+            <div style={{width:80,height:80,borderRadius:"50%",margin:"0 auto 28px",display:"flex",alignItems:"center",justifyContent:"center",
+              background:"linear-gradient(135deg,rgba(231,0,136,0.15),rgba(234,102,253,0.1))",border:"1px solid rgba(231,0,136,0.2)",
+              animation:"glow 3s ease-in-out infinite"}}>
+              <svg width="32" height="32" fill="none" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke="#e70088" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+            <h1 style={{color:"#fff",fontSize:30,fontWeight:800,margin:"0 0 12px",letterSpacing:"-0.03em"}}>You're all set.</h1>
+            <p style={{color:"rgba(255,255,255,0.35)",fontSize:14,lineHeight:1.7,margin:"0 0 32px"}}>
+              Your profile is saved. We'll use this to craft content that sounds like you, feels like you, and performs.
+            </p>
+            <span style={{fontSize:10,color:"rgba(255,255,255,0.15)",letterSpacing:"0.2em",textTransform:"uppercase"}}>[ profile complete ]</span>
+            <div style={{marginTop:36}}><button onClick={reset} style={{background:"none",border:"1px solid rgba(255,255,255,0.08)",
+              color:"rgba(255,255,255,0.25)",padding:"10px 20px",borderRadius:8,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Start over</button></div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div style={{minHeight:"100vh",background:"#080808",fontFamily:"'Plus Jakarta Sans',sans-serif",
+          display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}>
+
+          <div style={{position:"fixed",top:-300,right:-200,width:600,height:600,
+            background:"radial-gradient(circle,rgba(231,0,136,0.04) 0%,transparent 55%)",pointerEvents:"none"}}/>
+          <div style={{position:"fixed",bottom:-300,left:-200,width:600,height:600,
+            background:"radial-gradient(circle,rgba(234,102,253,0.025) 0%,transparent 55%)",pointerEvents:"none"}}/>
+
+          {/* Header */}
+          <div style={{padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",
+            borderBottom:"1px solid rgba(255,255,255,0.04)",position:"relative",zIndex:10,backdropFilter:"blur(12px)"}}>
+            <EvoraLogo size={15}/>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:100,height:2,borderRadius:1,background:"rgba(255,255,255,0.06)",overflow:"hidden"}}>
+                <div style={{width:`${pct}%`,height:"100%",borderRadius:1,background:"linear-gradient(90deg,#e70088,#ea66fd)",transition:"width 0.5s ease"}}/>
+              </div>
+              <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",fontVariantNumeric:"tabular-nums",minWidth:28}}>{pct}%</span>
+            </div>
+          </div>
+
+          <div style={{flex:1,padding:"16px 24px 140px",maxWidth:520,width:"100%",margin:"0 auto",
+            opacity:fade?0:1,transform:fade?"translateY(6px)":"translateY(0)",transition:"opacity 0.18s,transform 0.18s"}}>
+
+            <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.25em",textTransform:"uppercase",
+              color:"#e70088",opacity:0.6,display:"block",marginBottom:16}}>{"[ " + SECTIONS[cur.section] + " ]"}</span>
+
+            <span style={{fontSize:44,fontWeight:800,color:"rgba(255,255,255,0.04)",lineHeight:1,display:"block",
+              fontVariantNumeric:"tabular-nums",marginBottom:4}}>{String(step+1).padStart(2,"0")}</span>
+
+            <h2 style={{color:"#fff",fontSize:22,fontWeight:700,lineHeight:1.35,margin:"0 0 4px",letterSpacing:"-0.02em"}}>{cur.q}</h2>
+            {cur.subtitle && <p style={{color:"rgba(255,255,255,0.2)",fontSize:12,margin:"0 0 16px"}}>{cur.subtitle}</p>}
+
+            {cur.type==="text"&&(
+              <input type="text" value={answers[cur.id]||""} onChange={e=>update(cur.id,e.target.value)} placeholder={cur.placeholder}
+                style={{width:"100%",background:"transparent",border:"none",borderBottom:"2px solid rgba(255,255,255,0.08)",
+                  padding:"18px 0",color:"#fff",fontSize:20,fontWeight:600,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}}
+                onFocus={e=>e.target.style.borderBottomColor="#e70088"} onBlur={e=>e.target.style.borderBottomColor="rgba(255,255,255,0.08)"}/>
+            )}
+
+            {cur.type==="textarea"&&(
+              <textarea value={answers[cur.id]||""} onChange={e=>update(cur.id,e.target.value)} placeholder={cur.placeholder} rows={3}
+                style={{width:"100%",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,
+                  padding:"16px 18px",color:"#fff",fontSize:15,outline:"none",resize:"vertical",fontFamily:"inherit",marginTop:16,lineHeight:1.6,
+                  transition:"border-color 0.3s"}}
+                onFocus={e=>e.target.style.borderColor="rgba(231,0,136,0.25)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.06)"}/>
+            )}
+
+            {cur.type==="single"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:18}}>
+                {cur.options.map((opt,i)=>{const sel=answers[cur.id]===opt;return(
+                  <button key={i} onClick={()=>{update(cur.id,opt);if(step<TOTAL-1)setTimeout(()=>go(step+1),250);}}
+                    style={{textAlign:"left",padding:"13px 16px 13px 18px",borderRadius:10,cursor:"pointer",fontSize:14,lineHeight:1.4,
+                      fontFamily:"inherit",fontWeight:500,transition:"all 0.15s",position:"relative",overflow:"hidden",
+                      background:sel?"rgba(231,0,136,0.08)":"rgba(255,255,255,0.015)",
+                      border:sel?"1px solid rgba(231,0,136,0.3)":"1px solid rgba(255,255,255,0.05)",
+                      color:sel?"#fff":"rgba(255,255,255,0.5)",paddingLeft:sel?22:18}}>
+                    {sel&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"linear-gradient(180deg,#e70088,#ea66fd)"}}/>}
+                    {opt}
+                  </button>
+                );})}
+              </div>
+            )}
+
+            {cur.type==="multi"&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:18}}>
+                {cur.options.map((opt,i)=>{const vals=answers[cur.id]||[];const sel=vals.includes(opt);return(
+                  <button key={i} onClick={()=>update(cur.id,sel?vals.filter(v=>v!==opt):[...vals,opt])}
+                    style={{padding:"10px 18px",borderRadius:20,cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:500,
+                      transition:"all 0.15s",
+                      background:sel?"linear-gradient(135deg,rgba(231,0,136,0.15),rgba(234,102,253,0.1))":"rgba(255,255,255,0.02)",
+                      border:sel?"1px solid rgba(231,0,136,0.35)":"1px solid rgba(255,255,255,0.06)",
+                      color:sel?"#fff":"rgba(255,255,255,0.4)"}}>
+                    {opt}
+                  </button>
+                );})}
+              </div>
+            )}
+
+            {cur.type==="ratings"&&(
+              <div style={{marginTop:12}}>
+                {cur.items.map((item,i)=>(
+                  <RatingDots key={i} label={item} value={(answers[cur.id]||{})[item]||0}
+                    onChange={val=>update(cur.id,{...(answers[cur.id]||{}),[item]:val})}/>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Nav */}
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"linear-gradient(transparent,#080808 25%)",
+            padding:"20px 24px 30px",display:"flex",justifyContent:"space-between",alignItems:"center",
+            maxWidth:520,margin:"0 auto",boxSizing:"border-box",zIndex:10}}>
+            {step>0?(
+              <button onClick={()=>go(step-1)} style={{padding:"11px 18px",borderRadius:10,cursor:"pointer",
+                background:"transparent",border:"1px solid rgba(255,255,255,0.06)",
+                color:"rgba(255,255,255,0.35)",fontSize:13,fontFamily:"inherit",fontWeight:500}}>← Back</button>
+            ):<div/>}
+            {step<TOTAL-1?(
+              <button onClick={()=>go(step+1)}
+                style={{padding:"11px 28px",borderRadius:10,cursor:"pointer",
+                  background:"linear-gradient(135deg,#e70088,#b80070)",border:"none",
+                  color:"#fff",fontSize:13,fontFamily:"inherit",fontWeight:700,letterSpacing:"0.03em",
+                  boxShadow:"0 4px 20px rgba(231,0,136,0.2)",transition:"box-shadow 0.2s"}}
+                onMouseEnter={e=>e.target.style.boxShadow="0 6px 28px rgba(231,0,136,0.35)"}
+                onMouseLeave={e=>e.target.style.boxShadow="0 4px 20px rgba(231,0,136,0.2)"}>Continue →</button>
+            ):(
+              <button onClick={doSubmit}
+                style={{padding:"13px 32px",borderRadius:10,cursor:"pointer",
+                  background:"linear-gradient(135deg,#e70088,#ea66fd)",border:"none",
+                  color:"#fff",fontSize:13,fontFamily:"inherit",fontWeight:800,letterSpacing:"0.08em",
+                  boxShadow:"0 4px 28px rgba(231,0,136,0.3)",textTransform:"uppercase"}}>Submit ✦</button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
